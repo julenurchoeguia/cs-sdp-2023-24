@@ -206,7 +206,7 @@ class TwoClustersMIP(BaseModel):
         # Instanciation des variables
 
         # Coefficients de la fonction U
-        self.U = [[[self.model.addVar(name=f"u_{k}_{i}_{l}") for l in range(1,self.L)] for i in range(self.n)] for k in range(self.K)]
+        self.U = [[[self.model.addVar(name=f"u_{k}_{i}_{l}") for l in range(self.L)] for i in range(self.n)] for k in range(self.K)]
         # Variables binaires des comparaisons
         self.alpha = [[self.model.addVar(vtype=GRB.BINARY, name=f"a_{j}_{k}") for k in range(self.K)] for j in range(self.N)]
         # Variables d'erreurs 
@@ -254,7 +254,7 @@ class TwoClustersMIP(BaseModel):
         
         print("Fit done !" + str(self.model.status) + " " + str(self.model.ObjVal))
 
-        self.U_sol = [[[self.U[k][i][l].x for l in range(self.L-1)] for i in range(self.n)] for k in range(self.K)]
+        self.U_sol = [[[self.U[k][i][l].x for l in range(self.L)] for i in range(self.n)] for k in range(self.K)]
 
     
     def lineaire_morceaux(self, X,Y,x0):
@@ -271,7 +271,7 @@ class TwoClustersMIP(BaseModel):
     def U_k_i(self, k,i,x_j,U_coef):
         """Renvoie la valeur de la fonction U_k_i au point d'abscisse x"""
         x = x_j[i]
-        Y = [0] + [U_coef[k][i][l] for l in range(self.L-1)]
+        Y = [0] + [U_coef[k][i][l] for l in range(self.L)]
         X = self.U_abscisse[i]
         return self.lineaire_morceaux(X,Y,x)
 
