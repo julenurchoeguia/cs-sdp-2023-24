@@ -180,13 +180,12 @@ class TwoClustersMIP(BaseModel):
         m = Model("First model")
 
         # Constants
-        self.e = 0.001
-        self.e2 = 1e-6
-        self.K = 2
-        self.L = 5
-        self.P = 400
-        self.M1 = 1.1
-        self.M2 = 2.1
+        self.e = 0.001 # Erreur de précision pour les inégalités strictes
+        self.e2 = 1e-6 # Erreur de précision pour les inégalités 
+        self.K = n_clusters # Nombre de clusters
+        self.L = n_pieces # Nombre de morceaux pour la fonction U
+        self.P = 400 # Nombre de produits
+        self.M1 = 1.1 # Majorant pour les variables sigma
 
         return m
 
@@ -201,58 +200,61 @@ class TwoClustersMIP(BaseModel):
         Y: np.ndarray
             (n_samples, n_features) features of unchosen elements
         """
-        self.N = len(X)
-        self.n = X.shape[1]
+        self.N = len(X) # Nombre de comparaisons
+        self.n = X.shape[1] # Nombre de features
 
+        # Instanciation des variables
+
+        # Coefficients de la fonction U
         self.U = [[[self.model.addVar(name=f"u_{k}_{i}_{l}") for l in range(1,self.L)] for i in range(self.n)] for k in range(self.K)]
+        # Variables binaires des comparaisons
         self.alpha = [[self.model.addVar(vtype=GRB.BINARY, name=f"a_{j}_{k}") for k in range(self.K)] for j in range(self.N)]
-        # self.beta = [self.model.addVar(vtype=GRB.BINARY, name=f"b_{j}") for j in range(self.N)]
+        # Variables d'erreurs 
         self.sigma_pos = [[self.model.addVar( name=f"sigma_pos_{j}_{k}") for k in range(self.K)] for j in range(self.N)]
         self.sigma_neg = [[self.model.addVar( name=f"sigma_neg_{j}_{k}") for k in range(self.K)] for j in range(self.N)]
 
         self.model.update()
 
+        # Calcul des abscisses des points de la fonction U
         minsX = X.min(axis=0)
         maxsX = X.max(axis=0)
         minsY = Y.min(axis=0)
         maxsY = Y.max(axis=0)
         maxs = [max(maxsX[i], maxsY[i]) for i in range(self.n)]
         mins = [min(minsX[i], minsY[i]) for i in range(self.n)]
-
         self.U_abscisse = [[mins[i] + l * (maxs[i] - mins[i]) / self.L for l in range(self.L+1)] for i in range(self.n)]
 
-        #add constraints
+
+        # Ajout des contraintes
         for j in range(self.N):
             for k in range(self.K):
+                # Contraintes pour les variables binaires alpha
                 self.model.addConstr(self.U_k(k,X[j],self.U) - self.U_k(k,Y[j],self.U) + self.sigma_pos[j][k] - self.sigma_neg[j][k] - self.M1*self.alpha[j][k] <= -self.e)
                 self.model.addConstr(self.U_k(k,X[j],self.U) - self.U_k(k,Y[j],self.U) + self.sigma_pos[j][k] - self.sigma_neg[j][k] - self.M1*(self.alpha[j][k] - 1) >= 0)
+                # Contraintes pour les variables d'erreurs qui sont positives
                 self.model.addConstr(self.sigma_pos[j][k] >= 0)
                 self.model.addConstr(self.sigma_neg[j][k] >= 0)
+            # Contraintes pour s'assurer qu'il y a au moins une preference dans un des clusters
             self.model.addConstr(sum([self.alpha[j][k] for k in range(self.K)]) >= 1)
-
-            # self.model.addConstr(sum([self.alpha[j][k] for k in range(self.K)]) - 1 - self.M2*self.beta[j] <= -self.e)
-            # self.model.addConstr(sum([self.alpha[j][k] for k in range(self.K)]) - 1 - self.M2*(self.beta[j] - 1) >= 0)
 
 
         for k in range(self.K):
             for i in range(self.n):
-                self.model.addConstr(self.U[k][i][0] >= 0)
                 for l in range(self.L-2):
+                    # Contraintes monotonie
                     self.model.addConstr(self.U[k][i][l] - self.U[k][i][l+1] <= 0)
-
+            # Contraintes pour s'assurer que le max des utilités somment à 1
             self.model.addConstr(sum([self.U[k][i][self.L-2] for i in range(self.n)]) == 1)
         
         
 
-        #set objective
+        #Objectif
         self.model.setObjective(sum([sum([self.sigma_neg[j][k] + self.sigma_pos[j][k] for k in range(self.K)]) for j in range(self.N)]), GRB.MINIMIZE)
         self.model.optimize()
         
         print("Fit done !" + str(self.model.status) + " " + str(self.model.ObjVal))
 
         self.U_sol = [[[self.U[k][i][l].x for l in range(self.L-1)] for i in range(self.n)] for k in range(self.K)]
-        # self.alpha_sol = [[self.alpha[j][k].x for k in range(self.K)] for j in range(self.N)]
-        # self.beta_sol = [self.beta[j].x for j in range(self.N)]
 
     
     def lineaire_morceaux(self, X,Y,x0):
@@ -287,7 +289,7 @@ class TwoClustersMIP(BaseModel):
         """
         result = []
         for x in X:
-            result.append([self.U_k(0,x,self.U_sol), self.U_k(1,x,self.U_sol)])
+            result.append([self.U_k(k,x,self.U_sol) for k in range(self.K)])
         return np.array(result)
 
 
