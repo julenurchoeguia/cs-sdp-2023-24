@@ -217,7 +217,7 @@ class TwoClustersMIP(BaseModel):
         # Instanciation des variables
 
         # Coefficients de la fonction U
-        self.U = [[[self.model.addVar(name=f"u_{k}_{i}_{l}") for l in range(self.L)] for i in range(self.n)] for k in range(self.K)]
+        self.U = [[[self.model.addVar(name=f"u_{k}_{i}_{l}") for l in range(self.L+1)] for i in range(self.n)] for k in range(self.K)]
         # Variables binaires des comparaisons
         self.alpha = [[self.model.addVar(vtype=GRB.BINARY, name=f"a_{j}_{k}") for k in range(self.K)] for j in range(self.N)]
         # Variables d'erreurs 
@@ -227,20 +227,14 @@ class TwoClustersMIP(BaseModel):
         self.model.update()
 
         # Calcul des abscisses des points de la fonction U
-        minsX = X.min(axis=0)
-        maxsX = X.max(axis=0)
-        minsY = Y.min(axis=0)
-        maxsY = Y.max(axis=0)
-        maxs = [max(maxsX[i], maxsY[i]) for i in range(self.n)]
-        mins = [min(minsX[i], minsY[i]) for i in range(self.n)]
-        self.U_abscisse = [[mins[i] + l * (maxs[i] - mins[i]) / self.L for l in range(self.L+1)] for i in range(self.n)]
+        self.U_abscisse = [ l / self.L for l in range(self.L+1)]
 
 
         # Ajout des contraintes
         for j in range(self.N):
             for k in range(self.K):
                 # Contraintes pour les variables binaires alpha
-                self.model.addConstr(self.U_k(k,X[j],self.U) - self.U_k(k,Y[j],self.U) + self.sigma_pos[j][k] - self.sigma_neg[j][k] - self.M1*self.alpha[j][k] <= -self.e)
+                # self.model.addConstr(self.U_k(k,X[j],self.U) - self.U_k(k,Y[j],self.U) + self.sigma_pos[j][k] - self.sigma_neg[j][k] - self.M1*self.alpha[j][k] <= -self.e)
                 self.model.addConstr(self.U_k(k,X[j],self.U) - self.U_k(k,Y[j],self.U) + self.sigma_pos[j][k] - self.sigma_neg[j][k] - self.M1*(self.alpha[j][k] - 1) >= 0)
                 # Contraintes pour les variables d'erreurs qui sont positives
                 self.model.addConstr(self.sigma_pos[j][k] >= 0)
@@ -251,9 +245,11 @@ class TwoClustersMIP(BaseModel):
 
         for k in range(self.K):
             for i in range(self.n):
-                for l in range(self.L-2):
+                for l in range(self.L):
                     # Contraintes monotonie
-                    self.model.addConstr(self.U[k][i][l] - self.U[k][i][l+1] <= 0)
+                    self.model.addConstr(self.U[k][i][l] <= self.U[k][i][l+1])
+                # Containte valeur initiale nulle
+                self.model.addConstr(self.U[k][i][0] == 0)
             # Contraintes pour s'assurer que le max des utilités somment à 1
             self.model.addConstr(sum([self.U[k][i][self.L-2] for i in range(self.n)]) == 1)
         
@@ -265,25 +261,23 @@ class TwoClustersMIP(BaseModel):
         
         print("Fit done !" + str(self.model.status) + " " + str(self.model.ObjVal))
 
-        self.U_sol = [[[self.U[k][i][l].x for l in range(self.L)] for i in range(self.n)] for k in range(self.K)]
+        self.U_sol = [[[self.U[k][i][l].x for l in range(self.L+1)] for i in range(self.n)] for k in range(self.K)]
 
     
     def lineaire_morceaux(self, X,Y,x0):
         """Renvoie l'ordonnée y0 d'un point d'abscisse x0 sur la courbe
         passant par les points de coordonnées (X[i],Y[i])"""
         i = 0
-        while X[i] - x0 <= -self.e2:
+        while X[i] < x0:
             i += 1
-            if i == self.L:
-                return Y[i-1]
-        i -= 1
+        assert i-1 >= 0, f" X = {X}, x0 = {x0}"
         return Y[i-1] + (Y[i]-Y[i-1])/(X[i]-X[i-1])*(x0-X[i-1])
 
     def U_k_i(self, k,i,x_j,U_coef):
         """Renvoie la valeur de la fonction U_k_i au point d'abscisse x"""
         x = x_j[i]
-        Y = [0] + [U_coef[k][i][l] for l in range(self.L)]
-        X = self.U_abscisse[i]
+        Y = [U_coef[k][i][l] for l in range(self.L+1)]
+        X = self.U_abscisse
         return self.lineaire_morceaux(X,Y,x)
 
     def U_k(self, k,x_j,U_coef):

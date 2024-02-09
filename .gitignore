@@ -136,3 +136,7 @@ dmypy.json
 # Secret files
 secrets/*
 !secrets/.gitkeep
+pyproject.toml
+requirements-dev.lock
+requirements.lock
+src/cs_sdp_2023_24/__init__.py
